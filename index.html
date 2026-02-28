@@ -1,0 +1,1185 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Wave Function Painter</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #87CEEB; /* Céu azul claro */
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            touch-action: none; /* Previne scroll no mobile */
+        }
+        #ui-layer {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 20px;
+            box-sizing: border-box;
+            z-index: 10;
+        }
+        .hud-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+        }
+        .title-box {
+            background: rgba(255, 255, 255, 0.8);
+            padding: 10px 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            pointer-events: auto;
+            backdrop-filter: blur(5px);
+        }
+        .title-box h1 { margin: 0 0 5px 0; font-size: 1.2rem; color: #333; }
+        .title-box p { margin: 0; font-size: 0.9rem; color: #666; }
+        
+        .controls-hint {
+            background: rgba(0, 0, 0, 0.6);
+            color: white;
+            padding: 10px;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            text-align: right;
+            line-height: 1.4;
+            pointer-events: auto; /* Para permitir clique no toggle */
+        }
+
+        #deck-container {
+            align-self: flex-end;
+            pointer-events: auto;
+            display: flex;
+            gap: 15px;
+            align-items: flex-end;
+        }
+
+        .btn-draw {
+            background: #FF6B6B;
+            color: white;
+            border: none;
+            padding: 15px 25px;
+            font-size: 1.1rem;
+            font-weight: bold;
+            border-radius: 30px;
+            cursor: pointer;
+            box-shadow: 0 5px 15px rgba(255, 107, 107, 0.4);
+            transition: transform 0.1s, background 0.2s;
+            pointer-events: auto;
+        }
+        .btn-draw:active { transform: scale(0.95); }
+        .btn-draw:hover { background: #ff5252; }
+
+        .toggle-container {
+            margin-top: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 8px;
+        }
+
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 40px;
+            height: 20px;
+        }
+
+        .switch input { 
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            -webkit-transition: .4s;
+            transition: .4s;
+            border-radius: 20px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 16px;
+            width: 16px;
+            left: 2px;
+            bottom: 2px;
+            background-color: white;
+            -webkit-transition: .4s;
+            transition: .4s;
+            border-radius: 50%;
+        }
+
+        input:checked + .slider {
+            background-color: #2ecc71;
+        }
+
+        input:focus + .slider {
+            box-shadow: 0 0 1px #2ecc71;
+        }
+
+        input:checked + .slider:before {
+            -webkit-transform: translateX(20px);
+            -ms-transform: translateX(20px);
+            transform: translateX(20px);
+        }
+
+        #xr-buttons {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 10px;
+            pointer-events: auto;
+        }
+
+        /* Crosshair para Gamepad */
+        #crosshair {
+            position: absolute;
+            top: 50%; left: 50%;
+            width: 10px; height: 10px;
+            background: rgba(255,255,255,0.8);
+            border: 2px solid #333;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            display: none; /* Mostrado apenas se usar gamepad */
+            pointer-events: none;
+        }
+    </style>
+    <!-- Import Maps para Three.js -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.158.0/examples/jsm/"
+            }
+        }
+    </script>
+</head>
+<body>
+    <div id="ui-layer">
+        <div class="hud-top">
+            <div class="title-box">
+                <h1>Wave Function Painter</h1>
+                <p>Pinte com cartas para colapsar o mundo.</p>
+            </div>
+            <div class="controls-hint" id="controls-hint">
+                🖱️ Clique / Touch: Selecionar Carta / Pintar<br>
+                ⌨️ 1-5: Escolher Carta | Espaço: Nova Carta<br>
+                🎮 A: Pintar | B: Nova Carta | LB/RB: Trocar<br>
+                🥽 VR/AR: Gatilho p/ Ação
+                <div class="toggle-container">
+                    <label class="switch">
+                        <input type="checkbox" id="mode-toggle" checked>
+                        <span class="slider"></span>
+                    </label>
+                    <span style="font-size: 0.8rem;">Modo Expandido</span>
+                </div>
+            </div>
+        </div>
+        <div id="deck-container">
+            <button class="btn-draw" id="btn-draw-card">Puxar Nova Carta</button>
+        </div>
+    </div>
+    
+    <div id="xr-buttons"></div>
+    <div id="crosshair"></div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { VRButton } from 'three/addons/webxr/VRButton.js';
+        import { ARButton } from 'three/addons/webxr/ARButton.js';
+        import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
+        import { XRHandModelFactory } from 'three/addons/webxr/XRHandModelFactory.js';
+
+        // ==========================================
+        // CONFIGURAÇÕES GERAIS E CONSTANTES
+        // ==========================================
+        const GRID_SIZE = 15;
+        const CELL_SIZE = 1;
+        
+        // Tipos de Terreno (Estados do WFC)
+        const TILE_TYPES = {
+            WATER: 0, SAND: 1, GRASS: 2, FOREST: 3, ROCK: 4
+        };
+
+        const TILE_COLORS = {
+            [TILE_TYPES.WATER]: 0x3498db, // Azul
+            [TILE_TYPES.SAND]:  0xf1c40f, // Amarelo/Areia
+            [TILE_TYPES.GRASS]: 0x2ecc71, // Verde claro
+            [TILE_TYPES.FOREST]:0x27ae60, // Verde escuro
+            [TILE_TYPES.ROCK]:  0x7f8c8d  // Cinza
+        };
+
+        const TILE_NAMES = {
+            [TILE_TYPES.WATER]: "Água", [TILE_TYPES.SAND]: "Areia", 
+            [TILE_TYPES.GRASS]: "Grama", [TILE_TYPES.FOREST]: "Floresta", 
+            [TILE_TYPES.ROCK]: "Rocha"
+        };
+
+        // Regras de Adjacência do WFC (O que pode ficar do lado do que)
+        const RULES = {
+            [TILE_TYPES.WATER]: [TILE_TYPES.WATER, TILE_TYPES.SAND],
+            [TILE_TYPES.SAND]:  [TILE_TYPES.WATER, TILE_TYPES.SAND, TILE_TYPES.GRASS],
+            [TILE_TYPES.GRASS]: [TILE_TYPES.SAND, TILE_TYPES.GRASS, TILE_TYPES.FOREST, TILE_TYPES.ROCK],
+            [TILE_TYPES.FOREST]:[TILE_TYPES.GRASS, TILE_TYPES.FOREST],
+            [TILE_TYPES.ROCK]:  [TILE_TYPES.GRASS, TILE_TYPES.ROCK]
+        };
+
+        // ==========================================
+        // VARIÁVEIS GLOBAIS
+        // ==========================================
+        let scene, camera, renderer;
+        let grid = []; // O estado interno do tabuleiro WFC
+        let gridGroup; // Grupo 3D que segura os blocos
+        let hoverGroup; // Grupo para os cursores (central + vizinhos)
+        let centerHoverMesh; // Cursor central
+        let neighborHoverMeshes = []; // Cursores dos vizinhos
+        let raycaster, mouse;
+        
+        // Hand & Deck System
+        const MAX_CARDS = 5;
+        let hand = [null, null, null, null, null]; // O array de dados das cartas
+        let cardMeshes = []; // O array de objetos 3D das cartas
+        let activeCardIndex = 0; // Qual slot está selecionado
+
+        let particles = [];
+        let animations = []; // Para lerps e tweens simples
+        
+        // Controles XR
+        let controllers = [];
+        let controllerGrips = [];
+        
+        // Gamepad state
+        let gamepadActive = false;
+        let gamepadCursor = new THREE.Vector2(0, 0);
+
+        // Estado do Modo de Jogo
+        let isExpandedMode = true; // Controlado pelo toggle
+
+        // ==========================================
+        // INICIALIZAÇÃO
+        // ==========================================
+        init();
+        animate();
+
+        function init() {
+            // Cena e Câmera
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x87CEEB);
+            scene.fog = new THREE.Fog(0x87CEEB, 10, 30);
+
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100);
+            camera.position.set(0, 8, 10);
+            camera.lookAt(0, 0, 0);
+
+            // Câmera rig para XR (facilita mover o jogador)
+            const cameraRig = new THREE.Group();
+            cameraRig.add(camera);
+            cameraRig.position.set(0, 2, 8); // Posição confortável para VR/AR de mesa
+            scene.add(cameraRig);
+
+            // Renderizador
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.xr.enabled = true; // Habilita WebXR
+            renderer.shadowMap.enabled = true;
+            document.body.appendChild(renderer.domElement);
+
+            // Luzes
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+            scene.add(ambientLight);
+            
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            dirLight.position.set(5, 15, 5);
+            dirLight.castShadow = true;
+            dirLight.shadow.mapSize.width = 1024;
+            dirLight.shadow.mapSize.height = 1024;
+            scene.add(dirLight);
+
+            // Tabuleiro / Grid WFC
+            setupGrid();
+
+            // Setup Cursor Expandido (3x3)
+            hoverGroup = new THREE.Group();
+            scene.add(hoverGroup);
+
+            // Mesh central (forte)
+            const centerHoverGeo = new THREE.EdgesGeometry(new THREE.BoxGeometry(CELL_SIZE, 0.1, CELL_SIZE));
+            const centerHoverMat = new THREE.LineBasicMaterial({ color: 0x00ff00, linewidth: 3 });
+            centerHoverMesh = new THREE.LineSegments(centerHoverGeo, centerHoverMat);
+            centerHoverMesh.position.y = 0.06;
+            hoverGroup.add(centerHoverMesh);
+
+            // Meshes vizinhos (fracos/dimly)
+            const neighborHoverMat = new THREE.LineBasicMaterial({ color: 0x00ff00, transparent: true, opacity: 0.3, linewidth: 1 });
+            for (let i = 0; i < 8; i++) {
+                let neighborMesh = new THREE.LineSegments(centerHoverGeo, neighborHoverMat);
+                neighborMesh.position.y = 0.06;
+                neighborHoverMeshes.push(neighborMesh);
+                hoverGroup.add(neighborMesh);
+            }
+            hoverGroup.visible = false;
+
+
+            // Mão de Cartas 3D
+            setupHand();
+
+            // Setup Interações Clássicas (Mouse/Touch)
+            raycaster = new THREE.Raycaster();
+            mouse = new THREE.Vector2();
+            
+            window.addEventListener('resize', onWindowResize);
+            window.addEventListener('pointermove', onPointerMove);
+            window.addEventListener('pointerdown', onPointerDown);
+            window.addEventListener('contextmenu', (e) => { e.preventDefault(); drawNewCard(); });
+            window.addEventListener('keydown', (e) => { 
+                if(e.code === 'Space') drawNewCard(); 
+                if(e.key >= '1' && e.key <= '5') {
+                    let idx = parseInt(e.key) - 1;
+                    if(hand[idx]) setActiveCard(idx);
+                }
+            });
+
+            // Botão HTML
+            document.getElementById('btn-draw-card').addEventListener('click', (e) => {
+                e.stopPropagation();
+                drawNewCard();
+            });
+
+            // Toggle Mode
+            const modeToggle = document.getElementById('mode-toggle');
+            modeToggle.addEventListener('change', (e) => {
+                isExpandedMode = e.target.checked;
+            });
+
+            // Setup XR (VR e AR)
+            setupXR(cameraRig);
+
+            // Compra a mão inicial completa
+            for(let i=0; i<MAX_CARDS; i++) drawNewCard();
+        }
+
+        function setupGrid() {
+            gridGroup = new THREE.Group();
+            scene.add(gridGroup);
+
+            // Plano base invisível para Raycasting
+            const planeGeo = new THREE.PlaneGeometry(GRID_SIZE * CELL_SIZE, GRID_SIZE * CELL_SIZE);
+            const planeMat = new THREE.MeshBasicMaterial({ visible: false });
+            const interactionPlane = new THREE.Mesh(planeGeo, planeMat);
+            interactionPlane.rotation.x = -Math.PI / 2;
+            interactionPlane.name = "InteractionPlane";
+            gridGroup.add(interactionPlane);
+
+            // Grade visual
+            const gridHelper = new THREE.GridHelper(GRID_SIZE, GRID_SIZE, 0xffffff, 0xffffff);
+            gridHelper.material.opacity = 0.2;
+            gridHelper.material.transparent = true;
+            gridGroup.add(gridHelper);
+
+            // Inicializa Estrutura de Dados do WFC
+            const allStates = Object.values(TILE_TYPES);
+            for (let x = 0; x < GRID_SIZE; x++) {
+                grid[x] = [];
+                for (let z = 0; z < GRID_SIZE; z++) {
+                    grid[x][z] = {
+                        options: [...allStates], // Superposição inicial: pode ser qualquer coisa
+                        collapsed: false,
+                        mesh: null
+                    };
+                }
+            }
+        }
+
+        // ==========================================
+        // CARTA E HUD 3D
+        // ==========================================
+        function setupHand() {
+            const spacing = 0.7;
+            const startX = -((MAX_CARDS - 1) * spacing) / 2;
+
+            for (let i = 0; i < MAX_CARDS; i++) {
+                let cardGroup = new THREE.Group();
+                
+                // Base da carta
+                const cardGeo = new THREE.BoxGeometry(0.6, 0.9, 0.02);
+                const cardMat = new THREE.MeshStandardMaterial({ 
+                    color: 0xffffff, 
+                    roughness: 0.5 
+                });
+                const baseMesh = new THREE.Mesh(cardGeo, cardMat);
+                cardGroup.add(baseMesh);
+
+                // Canvas de textura para informações dinâmicas (Cargas, Tipo)
+                const canvas = document.createElement('canvas');
+                canvas.width = 256;
+                canvas.height = 512;
+                const ctx = canvas.getContext('2d');
+                const texture = new THREE.CanvasTexture(canvas);
+                
+                const frontGeo = new THREE.PlaneGeometry(0.58, 0.88);
+                const frontMat = new THREE.MeshBasicMaterial({ map: texture, transparent: true });
+                const frontMesh = new THREE.Mesh(frontGeo, frontMat);
+                frontMesh.position.z = 0.011;
+                cardGroup.add(frontMesh);
+                
+                // Guarda informações vitais no userData para uso na animação e raycast
+                cardGroup.userData = { index: i, ctx: ctx, texture: texture, canvas: canvas, baseY: -1.5 };
+                cardGroup.visible = false;
+
+                // Posiciona como um leque sutil
+                cardGroup.position.set(startX + (i * spacing), -1.5, -3);
+                let rotZ = (2 - i) * 0.05; 
+                cardGroup.rotation.set(-0.1, 0, rotZ);
+                
+                camera.add(cardGroup);
+                cardMeshes.push(cardGroup);
+            }
+        }
+
+        function updateCardTexture(index) {
+            let card = hand[index];
+            let mesh = cardMeshes[index];
+            if (!card || !mesh) return;
+            
+            const { ctx, texture, canvas } = mesh.userData;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Fundo da carta baseado na cor do Tile
+            ctx.fillStyle = '#' + TILE_COLORS[card.type].toString(16).padStart(6, '0');
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Design interno
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 10;
+            ctx.strokeRect(15, 15, canvas.width - 30, canvas.height - 30);
+
+            // Título
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 40px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(TILE_NAMES[card.type], canvas.width/2, 80);
+
+            // Cargas
+            ctx.font = 'bold 120px sans-serif';
+            ctx.fillText(card.charges, canvas.width/2, canvas.height/2 + 40);
+
+            ctx.font = '30px sans-serif';
+            ctx.fillText("USOS", canvas.width/2, canvas.height/2 + 90);
+
+            texture.needsUpdate = true;
+        }
+
+        function drawNewCard() {
+            // Procura o primeiro slot vazio na mão
+            for (let i = 0; i < MAX_CARDS; i++) {
+                if (!hand[i]) {
+                    const types = Object.values(TILE_TYPES);
+                    const randomType = types[Math.floor(Math.random() * types.length)];
+                    
+                    hand[i] = {
+                        type: randomType,
+                        charges: Math.floor(Math.random() * 4) + 2 // 2 a 5 usos
+                    };
+
+                    updateCardTexture(i);
+                    cardMeshes[i].visible = true;
+
+                    // Animação de entrada
+                    cardMeshes[i].userData.baseY = -3;
+                    let targetY = (i === activeCardIndex) ? -0.8 : -1.5;
+                    animateValue(cardMeshes[i].userData, 'baseY', targetY, 0.5, easeOutElastic);
+                    return; // Interrompe após puxar 1 carta
+                }
+            }
+        }
+
+        function setActiveCard(index) {
+            if (activeCardIndex === index) return; // Já é a ativa
+            
+            let oldIndex = activeCardIndex;
+            activeCardIndex = index;
+            
+            // Abaixa a carta antiga
+            if (hand[oldIndex] && cardMeshes[oldIndex]) {
+                animateValue(cardMeshes[oldIndex].userData, 'baseY', -1.5, 0.2, easeOutQuad);
+            }
+            // Levanta a nova carta
+            if (hand[activeCardIndex] && cardMeshes[activeCardIndex]) {
+                animateValue(cardMeshes[activeCardIndex].userData, 'baseY', -0.8, 0.2, easeOutQuad);
+            }
+        }
+
+        function cycleActiveCard(dir) {
+            let next = activeCardIndex;
+            // Procura o próximo slot que tenha uma carta
+            for (let i = 0; i < MAX_CARDS; i++) {
+                next = (next + dir + MAX_CARDS) % MAX_CARDS;
+                if (hand[next]) {
+                    setActiveCard(next);
+                    return;
+                }
+            }
+        }
+
+        function consumeCardCharge() {
+            let card = hand[activeCardIndex];
+            if (!card) return;
+            
+            card.charges--;
+            updateCardTexture(activeCardIndex);
+
+            let mesh = cardMeshes[activeCardIndex];
+            // Animação de "pulo" no ato de usar
+            animateValue(mesh.scale, 'x', 1.2, 0.1, easeOutQuad, () => animateValue(mesh.scale, 'x', 1, 0.2, easeOutQuad));
+            animateValue(mesh.scale, 'y', 1.2, 0.1, easeOutQuad, () => animateValue(mesh.scale, 'y', 1, 0.2, easeOutQuad));
+
+            if (card.charges <= 0) {
+                breakCard(activeCardIndex);
+            }
+        }
+
+        function breakCard(index) {
+            // Efeito de partículas
+            spawnParticles(cardMeshes[index].getWorldPosition(new THREE.Vector3()), '#' + TILE_COLORS[hand[index].type].toString(16).padStart(6, '0'));
+            
+            hand[index] = null;
+            cardMeshes[index].visible = false;
+
+            // Se a carta que quebrou era a ativa, selecionamos a próxima disponível
+            if (activeCardIndex === index) {
+                let found = false;
+                for(let i = 0; i < MAX_CARDS; i++) {
+                    if(hand[i]) {
+                        activeCardIndex = i; // Força seleção sem animar a velha que quebrou
+                        animateValue(cardMeshes[i].userData, 'baseY', -0.8, 0.2, easeOutQuad);
+                        found = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        // ==========================================
+        // LÓGICA DO WAVE FUNCTION COLLAPSE
+        // ==========================================
+        function getGridPos(worldPos) {
+            const offset = (GRID_SIZE * CELL_SIZE) / 2;
+            const x = Math.floor((worldPos.x + offset) / CELL_SIZE);
+            const z = Math.floor((worldPos.z + offset) / CELL_SIZE);
+            return { x, z };
+        }
+
+        function isValidPos(x, z) {
+            return x >= 0 && x < GRID_SIZE && z >= 0 && z < GRID_SIZE;
+        }
+
+        function canPlaceTile(x, z, type) {
+            const cell = grid[x][z];
+            if (cell.collapsed) return false;
+            // Verifica se o tipo da carta está nas opções possíveis para esta célula
+            return cell.options.includes(type);
+        }
+
+        function placeTile(worldPos) {
+            let activeCard = hand[activeCardIndex];
+            if (!activeCard) return;
+
+            const { x, z } = getGridPos(worldPos);
+            
+            if (isValidPos(x, z)) {
+                if (isExpandedMode) {
+                    // MODO EXPANDIDO: Brush 3x3 Force Fill
+                    
+                    const cellsToUpdate = [ {dx: 0, dz: 0} ]; // Centro
+                    const neighborsOffsets = [
+                        {dx: -1, dz: -1}, {dx: 0, dz: -1}, {dx: 1, dz: -1},
+                        {dx: -1, dz: 0},                   {dx: 1, dz: 0},
+                        {dx: -1, dz: 1},  {dx: 0, dz: 1},  {dx: 1, dz: 1}
+                    ];
+                    cellsToUpdate.push(...neighborsOffsets);
+
+                    // 1. Força a pintura de todos os 9 blocos
+                    let paintedCells = [];
+                    for (let offset of cellsToUpdate) {
+                        let nx = x + offset.dx;
+                        let nz = z + offset.dz;
+                        if (isValidPos(nx, nz)) {
+                            // Colapsa forçadamente sem propagar ainda
+                            forceCollapseCell(nx, nz, activeCard.type);
+                            paintedCells.push({x: nx, z: nz});
+                        }
+                    }
+
+                    // 2. Inicia a propagação WFC a partir das bordas da nossa pincelada
+                    // Isso fará com que o terreno adjacente se adapte à nossa nova mancha
+                    for (let cell of paintedCells) {
+                        propagateWFC(cell.x, cell.z, true); // true = modo de correção agressiva
+                    }
+
+                    consumeCardCharge();
+                } else {
+                    // MODO CLÁSSICO: Apenas o bloco central, se permitido
+                    if (!grid[x][z].collapsed && canPlaceTile(x, z, activeCard.type)) {
+                        collapseCell(x, z, activeCard.type, false);
+                        consumeCardCharge();
+                    } else {
+                        // Feedback visual de erro (brilho vermelho rápido)
+                        centerHoverMesh.material.color.setHex(0xff0000);
+                        setTimeout(() => {
+                            if(centerHoverMesh) centerHoverMesh.material.color.setHex(0xffffff);
+                        }, 200);
+                    }
+                }
+            }
+        }
+
+        // Função auxiliar para forçar a pintura de uma célula sem propagar imediatamente
+        function forceCollapseCell(x, z, type) {
+             const cell = grid[x][z];
+            
+            // Se já tiver uma mesh, remove a antiga
+            if(cell.mesh) {
+                gridGroup.remove(cell.mesh);
+            }
+
+            // Define a opção
+            cell.options = [type];
+            cell.collapsed = true;
+
+            // Criar Mesh visual
+            spawnTileMesh(x, z, type);
+        }
+
+        function collapseCell(x, z, type, forceOverwrite = false) {
+            forceCollapseCell(x, z, type);
+            // Propagar restrições
+            propagateWFC(x, z, forceOverwrite);
+        }
+
+        function propagateWFC(startX, startZ, isAggressiveCorrection = false) {
+            let stack = [{x: startX, z: startZ}];
+
+            while (stack.length > 0) {
+                let current = stack.pop();
+                let currentCell = grid[current.x][current.z];
+
+                // Identifica vizinhos ortogonais para propagação
+                const neighbors = [
+                    {dx: 0, dz: -1}, {dx: 1, dz: 0},
+                    {dx: 0, dz: 1}, {dx: -1, dz: 0}
+                ];
+
+                for (let n of neighbors) {
+                    let nx = current.x + n.dx;
+                    let nz = current.z + n.dz;
+
+                    if (isValidPos(nx, nz)) {
+                        let neighborCell = grid[nx][nz];
+                        
+                        // Se o vizinho já está colapsado, precisamos verificar se ele é compatível
+                        if (neighborCell.collapsed) {
+                            if (isAggressiveCorrection) {
+                                // Verifica se o vizinho colapsado é compatível com a célula atual
+                                let isCompatible = RULES[currentCell.options[0]].includes(neighborCell.options[0]);
+                                
+                                if (!isCompatible) {
+                                    // CONFLITO! Precisamos forçar o vizinho a se adaptar à célula atual.
+                                    // Escolhemos um tipo de transição válido baseado no que a célula atual permite
+                                    // e que seja o "mais próximo" possível (aqui simplificado pegando o primeiro válido)
+                                    
+                                    // Para Água, o válido é Areia. Para Floresta, é Grama.
+                                    let transitionType = getTransitionType(currentCell.options[0], neighborCell.options[0]);
+                                    
+                                    // Força a mudança e adiciona na pilha para continuar propagando a correção
+                                    setTimeout(() => {
+                                        forceCollapseCell(nx, nz, transitionType);
+                                        propagateWFC(nx, nz, true); 
+                                    }, 100); // Pequeno delay visual para a "onda de correção"
+                                }
+                            }
+                            continue; // Se não for modo agressivo, ou se for compatível, pula.
+                        }
+
+                        // Lógica padrão do WFC para células vazias:
+                        let possibleNeighborsOptions = new Set();
+                        for (let option of currentCell.options) {
+                            for (let allowed of RULES[option]) {
+                                possibleNeighborsOptions.add(allowed);
+                            }
+                        }
+
+                        let prevOptionsLength = neighborCell.options.length;
+                        neighborCell.options = neighborCell.options.filter(opt => possibleNeighborsOptions.has(opt));
+                        
+                        // Se as opções esgotaram numa célula vazia, reseta para evitar travamento (fallback de segurança)
+                        if (neighborCell.options.length === 0) {
+                           neighborCell.options = Object.values(TILE_TYPES);
+                        }
+
+                        if (neighborCell.options.length < prevOptionsLength) {
+                            stack.push({x: nx, z: nz});
+                        }
+
+                        if (neighborCell.options.length === 1 && !neighborCell.collapsed) {
+                            setTimeout(() => {
+                                if(!grid[nx][nz].collapsed){
+                                    collapseCell(nx, nz, neighborCell.options[0], isAggressiveCorrection);
+                                }
+                            }, 50 + Math.random() * 100);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Função para decidir a melhor transição entre dois terrenos incompatíveis
+        function getTransitionType(sourceType, targetType) {
+            // Regras hardcoded simples para as transições lógicas
+            if (sourceType === TILE_TYPES.WATER) return TILE_TYPES.SAND; // Água sempre gera Areia na borda
+            if (sourceType === TILE_TYPES.FOREST) return TILE_TYPES.GRASS; // Floresta sempre gera Grama na borda
+            if (sourceType === TILE_TYPES.ROCK) return TILE_TYPES.GRASS; // Rocha gera grama
+            
+            // Se não houver regra específica, pega a primeira opção válida do source
+            return RULES[sourceType][0]; 
+        }
+
+        function spawnTileMesh(x, z, type) {
+            const offset = (GRID_SIZE * CELL_SIZE) / 2;
+            const worldX = (x * CELL_SIZE) - offset + (CELL_SIZE / 2);
+            const worldZ = (z * CELL_SIZE) - offset + (CELL_SIZE / 2);
+
+            // Geometria procedural baseada no tipo
+            let geometry, material, posY = 0.25;
+            
+            if (type === TILE_TYPES.WATER) {
+                geometry = new THREE.BoxGeometry(0.9, 0.4, 0.9);
+                posY = 0.2;
+            } else if (type === TILE_TYPES.ROCK) {
+                geometry = new THREE.DodecahedronGeometry(0.5);
+                posY = 0.4;
+            } else {
+                geometry = new THREE.BoxGeometry(0.95, 0.5, 0.95);
+            }
+
+            material = new THREE.MeshStandardMaterial({ 
+                color: TILE_COLORS[type],
+                roughness: 0.8,
+                flatShading: true
+            });
+
+            const mesh = new THREE.Mesh(geometry, material);
+            mesh.position.set(worldX, posY, worldZ);
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+
+            // Se for floresta, adiciona uma árvore estilizada
+            if (type === TILE_TYPES.FOREST) {
+                const trunk = new THREE.Mesh(
+                    new THREE.CylinderGeometry(0.1, 0.1, 0.4),
+                    new THREE.MeshStandardMaterial({ color: 0x8B4513 })
+                );
+                trunk.position.y = 0.4;
+                const leaves = new THREE.Mesh(
+                    new THREE.ConeGeometry(0.4, 0.8, 4),
+                    new THREE.MeshStandardMaterial({ color: 0x1e824c, flatShading: true })
+                );
+                leaves.position.y = 0.9;
+                mesh.add(trunk);
+                mesh.add(leaves);
+            }
+
+            // Animação de Spawn (Pop-up)
+            mesh.scale.set(0, 0, 0);
+            gridGroup.add(mesh);
+            grid[x][z].mesh = mesh;
+
+            animateValue(mesh.scale, 'x', 1, 0.6, easeOutElastic);
+            animateValue(mesh.scale, 'y', 1, 0.6, easeOutElastic);
+            animateValue(mesh.scale, 'z', 1, 0.6, easeOutElastic);
+            
+            // Partículas simples
+            spawnParticles(new THREE.Vector3(worldX, posY, worldZ), '#' + TILE_COLORS[type].toString(16).padStart(6, '0'));
+        }
+
+        // ==========================================
+        // INPUT E INTERAÇÃO
+        // ==========================================
+        function onPointerMove(event) {
+            if (event.isPrimary === false) return;
+            // Normaliza mouse pra Raycast
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+        }
+
+        function onPointerDown(event) {
+            // Ignora cliques nos elementos de UI interativos
+            if (event.target.tagName === 'BUTTON' || event.target.tagName === 'INPUT' || event.target.classList.contains('slider')) return;
+            
+            raycaster.setFromCamera(mouse, camera);
+
+            // 1. Checa se clicou em uma CARTA (Selecionar)
+            const cardIntersects = raycaster.intersectObjects(cardMeshes, true);
+            if (cardIntersects.length > 0) {
+                let clickedMesh = cardIntersects[0].object;
+                // Sobe a árvore de objetos até achar o grupo da carta
+                while(clickedMesh && clickedMesh.userData.index === undefined) {
+                    clickedMesh = clickedMesh.parent;
+                }
+                
+                if (clickedMesh && clickedMesh.userData.index !== undefined) {
+                    let idx = clickedMesh.userData.index;
+                    if (hand[idx]) {
+                        setActiveCard(idx);
+                    }
+                    return; // Para não desenhar no grid ao mesmo tempo
+                }
+            }
+
+            // 2. Checa se clicou no GRID (Pintar)
+            const intersects = raycaster.intersectObject(gridGroup.getObjectByName("InteractionPlane"));
+            if (intersects.length > 0) {
+                placeTile(intersects[0].point);
+            }
+        }
+
+        // ==========================================
+        // WEBXR (VR/AR e Hand Pose)
+        // ==========================================
+        function setupXR(cameraRig) {
+            // Botões de Entrada na Interface
+            const xrContainer = document.getElementById('xr-buttons');
+            xrContainer.appendChild(VRButton.createButton(renderer));
+            xrContainer.appendChild(ARButton.createButton(renderer, { requiredFeatures: ['hit-test'] }));
+
+            const controllerModelFactory = new XRControllerModelFactory();
+            const handModelFactory = new XRHandModelFactory();
+
+            for (let i = 0; i < 2; i++) {
+                // Configura Controles Tradicionais
+                const controller = renderer.xr.getController(i);
+                controller.addEventListener('selectstart', onXRSelect); // Gatilho
+                controller.addEventListener('squeezestart', onXRSqueeze); // Grip (Puxar Carta)
+                cameraRig.add(controller);
+                controllers.push(controller);
+
+                // Modelo Visual do Controle
+                const grip = renderer.xr.getControllerGrip(i);
+                grip.add(controllerModelFactory.createControllerModel(grip));
+                cameraRig.add(grip);
+                controllerGrips.push(grip);
+
+                // Configura Hands (Para AR mobile ou Hand-Tracking no Quest)
+                const hand = renderer.xr.getHand(i);
+                hand.add(handModelFactory.createHandModel(hand, 'mesh'));
+                cameraRig.add(hand);
+
+                // Ray de mira
+                const geometry = new THREE.BufferGeometry().setFromPoints([
+                    new THREE.Vector3(0, 0, 0),
+                    new THREE.Vector3(0, 0, -1)
+                ]);
+                const line = new THREE.Line(geometry);
+                line.name = 'line';
+                line.scale.z = 5;
+                controller.add(line);
+            }
+        }
+
+        function onXRSelect(event) {
+            const controller = event.target;
+            // Raycast a partir do controle VR
+            const tempMatrix = new THREE.Matrix4();
+            tempMatrix.identity().extractRotation(controller.matrixWorld);
+            raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+            raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
+
+            // 1. Checa cartas
+            const cardIntersects = raycaster.intersectObjects(cardMeshes, true);
+            if (cardIntersects.length > 0) {
+                let clickedMesh = cardIntersects[0].object;
+                while(clickedMesh && clickedMesh.userData.index === undefined) {
+                    clickedMesh = clickedMesh.parent;
+                }
+                if (clickedMesh && clickedMesh.userData.index !== undefined) {
+                    let idx = clickedMesh.userData.index;
+                    if (hand[idx]) {
+                        setActiveCard(idx);
+                    }
+                    return;
+                }
+            }
+
+            // 2. Checa grid
+            const intersects = raycaster.intersectObject(gridGroup.getObjectByName("InteractionPlane"));
+            if (intersects.length > 0) {
+                placeTile(intersects[0].point);
+            }
+        }
+
+        function onXRSqueeze(event) {
+            drawNewCard();
+        }
+
+        // ==========================================
+        // GAMEPAD API (Para joysticks conectados)
+        // ==========================================
+        function pollGamepads() {
+            const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
+            let active = false;
+
+            for (let i = 0; i < gamepads.length; i++) {
+                const gp = gamepads[i];
+                if (gp) {
+                    active = true;
+                    // Analógico esquerdo para mover cursor virtual
+                    if (Math.abs(gp.axes[0]) > 0.1) gamepadCursor.x += gp.axes[0] * 0.02;
+                    if (Math.abs(gp.axes[1]) > 0.1) gamepadCursor.y -= gp.axes[1] * 0.02;
+
+                    // Limita nas bordas
+                    gamepadCursor.x = Math.max(-1, Math.min(1, gamepadCursor.x));
+                    gamepadCursor.y = Math.max(-1, Math.min(1, gamepadCursor.y));
+
+                    // Atualiza variável mouse para o Raycaster usar
+                    mouse.x = gamepadCursor.x;
+                    mouse.y = gamepadCursor.y;
+
+                    // Botão A (Pintar ou Clicar)
+                    if (gp.buttons[0].pressed && !gp.buttons[0].wasPressed) {
+                        onPointerDown({target: document.body}); // Simula click
+                    }
+                    gp.buttons[0].wasPressed = gp.buttons[0].pressed;
+
+                    // Botão B (Puxar Carta)
+                    if (gp.buttons[1].pressed && !gp.buttons[1].wasPressed) {
+                        drawNewCard();
+                    }
+                    gp.buttons[1].wasPressed = gp.buttons[1].pressed;
+
+                    // LB (Mudar Carta Anterior)
+                    if (gp.buttons[4] && gp.buttons[4].pressed && !gp.buttons[4].wasPressed) {
+                        cycleActiveCard(-1);
+                    }
+                    if (gp.buttons[4]) gp.buttons[4].wasPressed = gp.buttons[4].pressed;
+
+                    // RB (Mudar Carta Próxima)
+                    if (gp.buttons[5] && gp.buttons[5].pressed && !gp.buttons[5].wasPressed) {
+                        cycleActiveCard(1);
+                    }
+                    if (gp.buttons[5]) gp.buttons[5].wasPressed = gp.buttons[5].pressed;
+                }
+            }
+
+            // Exibe crosshair se gamepad estiver em uso
+            const crosshair = document.getElementById('crosshair');
+            if (active && !renderer.xr.isPresenting) {
+                crosshair.style.display = 'block';
+                crosshair.style.left = `${(gamepadCursor.x * 0.5 + 0.5) * window.innerWidth}px`;
+                crosshair.style.top = `${(-gamepadCursor.y * 0.5 + 0.5) * window.innerHeight}px`;
+            } else {
+                crosshair.style.display = 'none';
+            }
+        }
+
+
+        // ==========================================
+        // ANIMAÇÕES E PARTÍCULAS
+        // ==========================================
+        function spawnParticles(position, colorHex) {
+            const geo = new THREE.BoxGeometry(0.1, 0.1, 0.1);
+            const mat = new THREE.MeshBasicMaterial({ color: colorHex });
+            
+            for(let i=0; i<15; i++) {
+                const p = new THREE.Mesh(geo, mat);
+                p.position.copy(position);
+                p.velocity = new THREE.Vector3(
+                    (Math.random() - 0.5) * 4,
+                    Math.random() * 5 + 2,
+                    (Math.random() - 0.5) * 4
+                );
+                p.life = 1.0;
+                scene.add(p);
+                particles.push(p);
+            }
+        }
+
+        // Sistema simples de animação/tween (alternativa leve a bibliotecas externas)
+        function animateValue(obj, prop, target, duration, easingFunc = easeOutQuad, onComplete = null) {
+            animations.push({
+                obj: obj, prop: prop, start: obj[prop], target: target,
+                duration: duration, time: 0, easing: easingFunc, onComplete: onComplete
+            });
+        }
+
+        function easeOutQuad(t) { return t * (2 - t); }
+        function easeOutElastic(t) {
+            const c4 = (2 * Math.PI) / 3;
+            return t === 0 ? 0 : t === 1 ? 1 : Math.pow(2, -10 * t) * Math.sin((t * 10 - 0.75) * c4) + 1;
+        }
+
+        function updateAnimations(dt) {
+            for (let i = animations.length - 1; i >= 0; i--) {
+                let anim = animations[i];
+                anim.time += dt;
+                let progress = Math.min(anim.time / anim.duration, 1.0);
+                
+                let eased = (typeof anim.easing === 'function') ? anim.easing(progress) : progress;
+                
+                anim.obj[anim.prop] = anim.start + (anim.target - anim.start) * eased;
+
+                if (progress === 1.0) {
+                    if (typeof anim.onComplete === 'function') anim.onComplete();
+                    animations.splice(i, 1);
+                }
+            }
+        }
+
+        // ==========================================
+        // LOOP PRINCIPAL
+        // ==========================================
+        const clock = new THREE.Clock();
+
+        function animate() {
+            renderer.setAnimationLoop(render);
+        }
+
+        function render() {
+            const dt = clock.getDelta();
+
+            pollGamepads();
+            updateAnimations(dt);
+
+            // Atualiza Partículas
+            for (let i = particles.length - 1; i >= 0; i--) {
+                let p = particles[i];
+                p.position.addScaledVector(p.velocity, dt);
+                p.velocity.y -= 9.8 * dt; // Gravidade
+                p.scale.multiplyScalar(0.9); // Encolhe
+                p.life -= dt;
+                
+                if (p.life <= 0) {
+                    scene.remove(p);
+                    particles.splice(i, 1);
+                }
+            }
+
+            // Flutuação das Cartas
+            for (let i = 0; i < MAX_CARDS; i++) {
+                if (hand[i] && cardMeshes[i] && cardMeshes[i].visible) {
+                    cardMeshes[i].position.y = cardMeshes[i].userData.baseY + Math.sin(clock.elapsedTime * 2 + i) * 0.05;
+                }
+            }
+
+            // Lógica do Hover Expandido (Cursor 3D 3x3)
+            let activeCard = hand[activeCardIndex];
+
+            if (!renderer.xr.isPresenting) {
+                raycaster.setFromCamera(mouse, camera);
+                const intersects = raycaster.intersectObject(gridGroup.getObjectByName("InteractionPlane"));
+                
+                if (intersects.length > 0) {
+                    const { x, z } = getGridPos(intersects[0].point);
+                    if (isValidPos(x, z)) {
+                        hoverGroup.visible = true;
+                        const offset = (GRID_SIZE * CELL_SIZE) / 2;
+                        
+                        // Posiciona o centro
+                        centerHoverMesh.position.x = (x * CELL_SIZE) - offset + (CELL_SIZE / 2);
+                        centerHoverMesh.position.z = (z * CELL_SIZE) - offset + (CELL_SIZE / 2);
+
+                        if (isExpandedMode) {
+                            // MODO EXPANDIDO
+                            // Mostra os cursores vizinhos
+                            for (let mesh of neighborHoverMeshes) {
+                                mesh.visible = true;
+                            }
+                            
+                            // A jogada é sempre livre, verde
+                            if (activeCard) {
+                                 centerHoverMesh.material.color.setHex(0x00ff00);
+                            } else {
+                                 centerHoverMesh.material.color.setHex(0xffffff); 
+                            }
+    
+                            // Posiciona e colore os vizinhos
+                            const neighborsOffsets = [
+                                {dx: -1, dz: -1}, {dx: 0, dz: -1}, {dx: 1, dz: -1},
+                                {dx: -1, dz: 0},                   {dx: 1, dz: 0},
+                                {dx: -1, dz: 1},  {dx: 0, dz: 1},  {dx: 1, dz: 1}
+                            ];
+                            
+                            for(let i=0; i<8; i++){
+                                let nx = x + neighborsOffsets[i].dx;
+                                let nz = z + neighborsOffsets[i].dz;
+                                let nMesh = neighborHoverMeshes[i];
+                                
+                                if(isValidPos(nx, nz)) {
+                                    nMesh.position.x = (nx * CELL_SIZE) - offset + (CELL_SIZE / 2);
+                                    nMesh.position.z = (nz * CELL_SIZE) - offset + (CELL_SIZE / 2);
+                                    
+                                    // Adicionando verificação de segurança para o activeCard
+                                    if (activeCard && grid[nx] && grid[nx][nz] && grid[nx][nz].options && grid[nx][nz].options.includes(activeCard.type)) {
+                                        nMesh.material.color.setHex(0x00ff00); 
+                                    } else {
+                                        nMesh.material.color.setHex(0xffff00); 
+                                    }
+                                } else {
+                                    // Fora do mapa, esconde
+                                    nMesh.position.x = -9999;
+                                }
+                            }
+                        } else {
+                            // MODO CLÁSSICO (1 bloco só)
+                            // Esconde os vizinhos
+                            for (let mesh of neighborHoverMeshes) {
+                                mesh.visible = false;
+                            }
+
+                            if (activeCard && !grid[x][z].collapsed) {
+                                if (canPlaceTile(x, z, activeCard.type)) {
+                                    centerHoverMesh.material.color.setHex(0x00ff00); // Verde (Válido)
+                                } else {
+                                    centerHoverMesh.material.color.setHex(0xff0000); // Vermelho (Inválido)
+                                }
+                            } else {
+                                centerHoverMesh.material.color.setHex(0xffffff);
+                            }
+                        }
+
+                    } else {
+                        hoverGroup.visible = false;
+                    }
+                } else {
+                    hoverGroup.visible = false;
+                }
+            } else {
+                // Em XR o hover expandido é desligado a favor da linha do controle
+                hoverGroup.visible = false;
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+    </script>
+</body>
+</html>
